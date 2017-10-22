@@ -43,6 +43,8 @@ int lastAscentTime; // time of last ascent rate calculation
 double lastAlt; // last altitude, for calculation
 double ascentRate; // last calculated rate, to fill forward in logging
 
+Adafruit_BNO055 bno = Adafruit_BNO055(55,0x29);
+
 //rockblock
 int lastTransmit;
 
@@ -73,6 +75,7 @@ void setup() {
   dataFile.print("Time(ms), Pressure(Pa), Alt(m), AscentRate(m/s), TempIn(C), TempOut(C), ");
   dataFile.println("GPSLat, GPSLong, GPSAlt, ax(G), ay, az, gx, gy, gz, mx, my, mz, RockBlockStatus");
 
+  // set up BMP
   if (!bmp.begin()) {
     DEBUG_PRINTLN("Could not find a valid BMP280 sensor, check wiring!");
     while (true) {
@@ -82,6 +85,15 @@ void setup() {
   lastAlt = bmp.readAltitude(launchSitePressure); // initialize ascent rate variables
   ascentRate = 0;
   lastAscentTime = millis();
+
+  // set up BNO
+  if (!bno.begin()) {
+    DEBUG_PRINTLN("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!")
+    while (true) {
+      // TODO: flash LED
+    }
+  }
+  bno.setExtCrystalUse(true); // TODO figure this out
 }
 
 void loop() {
@@ -100,6 +112,18 @@ void loop() {
   }
   dataString += String(pressure) + ", " + String(alt) + ", ";
   dataString += String(ascentRate) + ", " + String(tempIn) + ", ";
+
+  // read data from the BNO
+  sensors_event_t event;
+  bno.getEvent(&event);
+  dataString += (String)event.orientation.x + ", " + (String)event.orientation.y + ", ";
+  dataSTring += (String)event.orientation.z + ", "; // TODO: get accel and gyro from BNO
+
+  // TODO get thermocouple data
+
+  // TODO get GPS data
+
+  // TODO talk to rockblock
 
   // write out data to the file if available
   if (dataFile) {
