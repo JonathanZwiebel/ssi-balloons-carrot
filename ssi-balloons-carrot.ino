@@ -1,3 +1,21 @@
+/*  Avionics program for Balloons onboarding team Carrot.
+ *   ________  ________  ________  ________  ________  _________   
+ *  |\   ____\|\   __  \|\   __  \|\   __  \|\   __  \|\___   ___\ 
+ *  \ \  \___|\ \  \|\  \ \  \|\  \ \  \|\  \ \  \|\  \|___ \  \_| 
+ *   \ \  \    \ \   __  \ \   _  _\ \   _  _\ \  \\\  \   \ \  \  
+ *    \ \  \____\ \  \ \  \ \  \\  \\ \  \\  \\ \  \\\  \   \ \  \ 
+ *     \ \_______\ \__\ \__\ \__\\ _\\ \__\\ _\\ \_______\   \ \__\
+ *      \|_______|\|__|\|__|\|__|\|__|\|__|\|__|\|_______|    \|__|
+ *  
+ *  
+ *  Data downlink ideal rate: 50 bytes every 5 min
+ *  
+ *  To send back to ground:
+ *  GPS, lat long, temp in out, altitude, ascent rate
+ *  To send to balloon:
+ *  Commands: cutdown, release secondary payload, 
+ */
+
 #include <SPI.h>
 #include <SD.h>
 
@@ -24,7 +42,7 @@ void setup() {
   #ifdef DEBUG
   Serial.begin(9600);
   while (!Serial) {
-    ;
+    ; // wait for serial connection to computer to open
   }
   #endif
 
@@ -32,10 +50,15 @@ void setup() {
   DEBUG_PRINTLN("Initializing SD card...");
   if (!SD.begin(chipSelect)) {
     DEBUG_PRINTLN("Card failed, or not present");
-    return; // don't do anything more and return
+    while (true) {
+      // TODO: flash LED
+    }
   }
   dataFile = SD.open("datalog.txt", FILE_WRITE);
   DEBUG_PRINTLN("Card initialized.");
+  // Data column headers. Temporary.
+  dataFile.print("Time(ms), Pressure(mb), Alt(ft), TempIn(C), TempOut(C), GPSLat, GPSLong, ");
+  dataFile.println("GPSAlt, ax(G), ay, az, gx, gy, gz, mx, my, mz, RockBlockStatus");
 }
 
 void loop() {
@@ -49,6 +72,7 @@ void loop() {
   }
   if (millis() - lastFlush > 10000){
     dataFile.flush(); // flush the SD car buffer every 10s
+    lastFlush = millis();
   }
 }
 
