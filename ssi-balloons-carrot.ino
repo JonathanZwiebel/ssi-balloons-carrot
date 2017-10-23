@@ -18,6 +18,7 @@
 
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BMP280.h>
+#include <Adafruit_BNO055.h>
 #include <SD.h>
 #include <SPI.h>
 #include <Wire.h>
