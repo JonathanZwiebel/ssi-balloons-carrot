@@ -20,6 +20,7 @@
 #include <Adafruit_BMP280.h>
 #include <Adafruit_BNO055.h>
 #include <Adafruit_MAX31855.h>
+#include "TinyGPS++.h"
 #include <SD.h>
 #include <SPI.h>
 #include <Wire.h>
@@ -64,6 +65,9 @@ Adafruit_BNO055 bno(55,0x29);
 
 // ROCKBlock (Hardware Serial) Radio
 int lastTransmit;
+
+// GPS (Hardware Serial) GPS
+TinyGPSPlus gps;
 
 
 void setup() {
@@ -163,11 +167,20 @@ String readSensors() {
   dataString += (String)event.orientation.x + ", " + (String)event.orientation.y + ", ";
   dataString += (String)event.orientation.z + ", "; // TODO: get accel and gyro from BNO
 
-  // MAX31855 (Thermocouple) Input
+  // MAX31855 (Thermocouple) Input 
   double temperature = thermocouple.readFarenheit();
   dataString += String(temperature) + ", ";
   
   // TODO get GPS data
+  double latitude, longitude;  
+  if(gps.location.isValid()) {
+    latitude = gps.location.lat();
+    longitude = gps.location.lng();    
+  } else {
+    latitude = -1;
+    longitude = -1;
+  }
+  dataString += String(latitude) + ", " + String(longitude);
 
   // TODO talk to rockblock
 
