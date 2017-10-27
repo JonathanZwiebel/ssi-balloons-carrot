@@ -1,37 +1,37 @@
 /*  Avionics program for Balloons onboarding team Carrot.
- *   ________  ________  ________  ________  ________  _________   
- *  |\   ____\|\   __  \|\   __  \|\   __  \|\   __  \|\___   ___\ 
- *  \ \  \___|\ \  \|\  \ \  \|\  \ \  \|\  \ \  \|\  \|___ \  \_| 
- *   \ \  \    \ \   __  \ \   _  _\ \   _  _\ \  \\\  \   \ \  \  
- *    \ \  \____\ \  \ \  \ \  \\  \\ \  \\  \\ \  \\\  \   \ \  \ 
- *     \ \_______\ \__\ \__\ \__\\ _\\ \__\\ _\\ \_______\   \ \__\
- *      \|_______|\|__|\|__|\|__|\|__|\|__|\|__|\|_______|    \|__|
- *  
- *  
- *  Data downlink ideal rate: 50 bytes every 5 min
- *  
- *  To send back to ground:
- *  GPS, lat long, temp in out, altitude, ascent rate
- *  To send to balloon:
- *  Commands: cutdown, release secondary payload, 
- */
+     ________  ________  ________  ________  ________  _________
+    |\   ____\|\   __  \|\   __  \|\   __  \|\   __  \|\___   ___\
+    \ \  \___|\ \  \|\  \ \  \|\  \ \  \|\  \ \  \|\  \|___ \  \_|
+     \ \  \    \ \   __  \ \   _  _\ \   _  _\ \  \\\  \   \ \  \
+      \ \  \____\ \  \ \  \ \  \\  \\ \  \\  \\ \  \\\  \   \ \  \
+       \ \_______\ \__\ \__\ \__\\ _\\ \__\\ _\\ \_______\   \ \__\
+        \|_______|\|__|\|__|\|__|\|__|\|__|\|__|\|_______|    \|__|
+
+
+    Data downlink ideal rate: 50 bytes every 5 min
+
+    To send back to ground:
+    GPS, lat long, temp in out, altitude, ascent rate
+    To send to balloon:
+    Commands: cutdown, release secondary payload,
+*/
 
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BMP280.h>
 #include <Adafruit_BNO055.h>
 #include <Adafruit_MAX31855.h>
-#include "TinyGPS++.h"
-#include <SD.h>
+#include <TinyGPS++.h>
+#include "SD.h"
 #include <SPI.h>
 #include <Wire.h>
 
 #define DEBUG // comment out to turn off debugging
 #ifdef DEBUG
-  #define DEBUG_PRINT(x)  Serial.print (x)
-  #define DEBUG_PRINTLN(x)  Serial.println (x)
+#define DEBUG_PRINT(x)  Serial.print (x)
+#define DEBUG_PRINTLN(x)  Serial.println (x)
 #else
-  #define DEBUG_PRINT(x)
-  #define DEBUG_PRINTLN(x)
+#define DEBUG_PRINT(x)
+#define DEBUG_PRINTLN(x)
 #endif
 
 // Timing (Internal)
@@ -42,7 +42,7 @@ int startTime;
 
 // SPI Ports
 #define SD_READER_CS 10
-#define THERMOCOUPLE_CS 4
+#define THERMOCOUPLE_CS 9
 
 // Environemental Parameters
 #define LAUNCH_SITE_PRESSURE 1014.562
@@ -55,32 +55,37 @@ int lastFlush;
 Adafruit_MAX31855 thermocouple(THERMOCOUPLE_CS);
 
 // BMP280 (I2C) | Pressure, Internal Temperature
-Adafruit_BMP280 bmp; 
+Adafruit_BMP280 bmp;
 int lastAscentTime;             // Time of last ascent rate calculation
 double lastAlt;                 // Last altitude, for calculation
 double ascentRate;              // Last calculated rate, to fill forward in logging
 
 // BNO055 (Serial) IMU
-Adafruit_BNO055 bno(55,0x29);
+Adafruit_BNO055 bno(55);
 
 // ROCKBlock (Hardware Serial) Radio
 int lastTransmit;
 
 // GPS (Hardware Serial) GPS
 TinyGPSPlus gps;
-
+float f_lat = 0, f_long = 0;
+int sats = -1;
+long unsigned f_age = 0;
 
 void setup() {
   startTime = millis();
   lastFlush = 0;
   lastTransmit = 0;
 
-  #ifdef DEBUG
+#ifdef DEBUG
   Serial.begin(9600);
-  while (!Serial) {continue;}
-  #endif
+  while (!Serial) {
+    continue;
+  }
+#endif
 
   // SD Card Reader
+  pinMode(SD_READER_CS, OUTPUT);
   DEBUG_PRINTLN("Initializing SD card...");
   if (!SD.begin(SD_READER_CS)) {
     DEBUG_PRINTLN("Card failed, or not present");
@@ -90,7 +95,7 @@ void setup() {
   }
   dataFile = SD.open("datalog.txt", FILE_WRITE);
   DEBUG_PRINTLN("Card initialized.");
- 
+
 
   // BMP280
   if (!bmp.begin()) {
@@ -112,6 +117,11 @@ void setup() {
   }
   bno.setExtCrystalUse(true); // TODO figure this out
 
+  // GPS
+  Serial1.begin(9600);
+
+  pinMode(THERMOCOUPLE_CS, OUTPUT);
+
   // Data column headers. Temporary.
   dataFile.print("Time(ms), Pressure(Pa), Alt(m), AscentRate(m/s), TempIn(C), TempOut(C), ");
   dataFile.println("GPSLat, GPSLong, GPSAlt, ax(G), ay, az, gx, gy, gz, mx, my, mz, RockBlockStatus");
@@ -119,18 +129,18 @@ void setup() {
 
 void loop() {
   String dataString = readSensors();
-  int loopTime = millis();
-  
+  long loopTime = millis();
+
   if (dataFile) {
     DEBUG_PRINTLN("Writing to datalog.txt");
     dataFile.println(dataString);
   } else {
     DEBUG_PRINTLN("Error opening datalog.txt");
   }
-  
-  if (loopTime - lastFlush > SD_CARD_FLUSH_TIME){
+
+  if (loopTime - lastFlush > SD_CARD_FLUSH_TIME) {
     DEBUG_PRINTLN("Flushing datalog.txt");
-    dataFile.flush(); 
+    dataFile.flush();
     lastFlush = loopTime;
   }
 
@@ -145,11 +155,14 @@ void loop() {
 String readSensors() {
   String dataString = "";
 
-  // Timing 
-  int loopTime = millis();
+  // Timing
+  long loopTime = millis();
+  DEBUG_PRINTLN("Loop Time");
+  DEBUG_PRINTLN(loopTime);
   dataString += loopTime + ", ";
 
   // BMP280 (Barometer + Thermometer) Input
+  DEBUG_PRINTLN("BMP280 stuff");
   double tempIn = bmp.readTemperature();
   double pressure = bmp.readPressure();
   double alt = bmp.readAltitude(LAUNCH_SITE_PRESSURE); // avg sea level pressure for hollister for past month
@@ -160,30 +173,52 @@ String readSensors() {
   }
   dataString += String(pressure) + ", " + String(alt) + ", ";
   dataString += String(ascentRate) + ", " + String(tempIn) + ", ";
+  DEBUG_PRINTLN(pressure);
+  DEBUG_PRINTLN(alt);
+  DEBUG_PRINTLN(ascentRate);
+  DEBUG_PRINTLN(tempIn);
 
   // BNO055 (IMU) Input
+  DEBUG_PRINTLN("BNO055 Stuff");
   sensors_event_t event;
   bno.getEvent(&event);
   dataString += (String)event.orientation.x + ", " + (String)event.orientation.y + ", ";
-  dataString += (String)event.orientation.z + ", "; // TODO: get accel and gyro from BNO
+  dataString += (String)event.orientation.z + ", ";
+  DEBUG_PRINTLN(event.orientation.x);
+  DEBUG_PRINTLN(event.orientation.y);
+  DEBUG_PRINTLN(event.orientation.z);
 
-  // MAX31855 (Thermocouple) Input 
+  // MAX31855 (Thermocouple) Input
+  DEBUG_PRINTLN("MAX31855 Stuff");
   double temperature = thermocouple.readFarenheit();
   dataString += String(temperature) + ", ";
+  DEBUG_PRINTLN(temperature);
+
+  // GPS Input
+  DEBUG_PRINTLN("GPS Stuff");
+  bool newData = false;
   
-  // TODO get GPS data
-  double latitude, longitude;  
-  if(gps.location.isValid()) {
-    latitude = gps.location.lat();
-    longitude = gps.location.lng();    
-  } else {
-    latitude = -1;
-    longitude = -1;
+  while (Serial1.available()) {
+    //DEBUG_PRINTLN("SS AVAILABLE");
+    char c = Serial1.read();
+    if(gps.encode(c)) {
+      newData = true;
+      break;
+    }
   }
-  dataString += String(latitude) + ", " + String(longitude);
+  if(newData) {
+    f_lat = gps.location.lat();
+    f_long = gps.location.lng();
+    f_age = gps.location.age();
+    sats = gps.satellites.value();
+  }
 
-  // TODO talk to rockblock
-
+  dataString += String(f_lat) + ", " + String(f_long) + ", " + String(f_age) + ", " + String(sats);
+  DEBUG_PRINTLN(f_lat);
+  DEBUG_PRINTLN(f_long);
+  DEBUG_PRINTLN(f_age);
+  DEBUG_PRINTLN(sats);
+  DEBUG_PRINTLN("");
   return dataString;
 }
 
