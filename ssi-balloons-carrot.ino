@@ -37,8 +37,8 @@
 
 // Timing (Internal)
 long startTime;
-long refTop;
-long refBottom;
+long refTop; //Time difference between 't' command and start of program
+long refBottom; // Time difference between 'b' command and start of program
 #define SD_CARD_FLUSH_TIME 10000 // 10 Seconds
 #define ROCKBLOCK_TRANSMIT_TIME 300000 // 5 Minutes
 #define BAROMETER_MEASURMENT_INTERVAL 10000 // 10 Seconds
@@ -94,11 +94,11 @@ void setup() {
   lastTransmit = 0;
 
   // set FET gates to LOW
-  pinmode(topCut, OUTPUT);
-  pinmode(bottomCut, OUTPUT);
+  pinmode(WIRE_TOP, OUTPUT);
+  pinmode(WIRE_BOTTOM, OUTPUT);
   pinmode(heater, OUTPUT);
-  digitalWrite(topCut, LOW);
-  digitalWrite(bottomCut, LOW);
+  digitalWrite(WIRE_TOP, LOW);
+  digitalWrite(WIRE_BOTTOM, LOW);
   digitalWrite(heater, LOW);
 
 #ifdef DEBUG
@@ -310,6 +310,7 @@ String readSensors() {
   err = modem.getSignalQuality(signalQuality);
   dataString += string(signalQuality) + ", ";
   
+   // Turns off wires after delayTime + refTop/refBottom
   if ((millis() - refTop) > delayTime * 1000){
      digitalWrite(WIRE_TOP, LOW);     
      releaseTop = false;
