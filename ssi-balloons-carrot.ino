@@ -18,7 +18,7 @@
 
 #include <Adafruit_Sensor.h>
 #include <Adafruit_BMP280.h>
-#include <Adafruit_BNO055.h>
+// #include <Adafruit_BNO055.h>
 #include <Adafruit_MAX31855.h>
 #include <IridiumSBD.h>
 #include <TinyGPS++.h>
@@ -36,6 +36,7 @@
 #endif
 
 bool firstSend = true;
+String dataStringBuffer = "";
 
 // Timing (Internal)
 long startTime;
@@ -67,7 +68,7 @@ double lastAlt;                 // Last altitude, for calculation
 double ascentRate;              // Last calculated rate, to fill forward in logging
 
 // BNO055 (Serial) IMU
-Adafruit_BNO055 bno(55);
+// Adafruit_BNO055 bno(55);
 
 // ROCKBlock (Hardware Serial) Radio
 long lastTransmit;
@@ -136,11 +137,11 @@ void setup() {
   lastAscentTime = millis();
 
   // BNO055
-  if (!bno.begin()) {
-    DEBUG_PRINTLN("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!");
-    //flashLED(); // TODO: uncomment
-  }
-  bno.setExtCrystalUse(true); // TODO figure this out
+//  if (!bno.begin()) {
+//    DEBUG_PRINTLN("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!");
+//    //flashLED(); // TODO: uncomment
+//  }
+//  bno.setExtCrystalUse(true); // TODO figure this out
 
   // GPS
   Serial1.begin(9600);
@@ -230,6 +231,7 @@ void loop() {
   if (loopTime - lastTransmit > ROCKBLOCK_TRANSMIT_TIME) {
     DEBUG_PRINTLN("Transmiting to ROCKBlock");
     char buf [200];
+    dataStringBuffer.toCharArray(buf, sizeof(buf));
     modem.sendSBDText(buf);
     lastTransmit = loopTime;
   }
@@ -264,14 +266,14 @@ String readSensors() {
   DEBUG_PRINTLN(tempIn);
 
   // BNO055 (IMU) Input
-  DEBUG_PRINTLN("BNO055 Stuff");
-  sensors_event_t event;
-  bno.getEvent(&event);
-  dataString += (String)event.orientation.x + ", " + (String)event.orientation.y + ", ";
-  dataString += (String)event.orientation.z + ", ";
-  DEBUG_PRINTLN(event.orientation.x);
-  DEBUG_PRINTLN(event.orientation.y);
-  DEBUG_PRINTLN(event.orientation.z);
+//  DEBUG_PRINTLN("BNO055 Stuff");
+//  sensors_event_t event;
+//  bno.getEvent(&event);
+//  dataString += (String)event.orientation.x + ", " + (String)event.orientation.y + ", ";
+//  dataString += (String)event.orientation.z + ", ";
+//  DEBUG_PRINTLN(event.orientation.x);
+//  DEBUG_PRINTLN(event.orientation.y);
+//  DEBUG_PRINTLN(event.orientation.z);
 
   // MAX31855 (Thermocouple) Input
   DEBUG_PRINTLN("MAX31855 Stuff");
@@ -281,7 +283,6 @@ String readSensors() {
 
   // GPS Input
   DEBUG_PRINTLN("GPS Stuff");
-  bool newData = false;
   
   while (Serial1.available()) {
     char c = Serial1.read();
@@ -305,9 +306,9 @@ String readSensors() {
   int signalQuality = -1;
   modem.getSignalQuality(signalQuality);
   dataString += String(signalQuality) + ", ";
-     
-  return dataString;
-     
+
+  dataStringBuffer = dataString;
+  return dataString;     
 }
 
 void flashLED() {
