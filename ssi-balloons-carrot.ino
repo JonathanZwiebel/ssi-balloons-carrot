@@ -35,6 +35,8 @@
 #define DEBUG_PRINTLN(x)
 #endif
 
+bool firstSend = true;
+
 // Timing (Internal)
 long startTime;
 long refTop; //Time difference between 't' command and start of program
@@ -165,6 +167,14 @@ void setup() {
 
 void loop() {
   long loopTime = millis();
+
+//  if(firstSend) {
+//    firstSend = false;
+//    DEBUG_PRINTLN("Transmiting to ROCKBlock");
+//    char buf [200];
+//    modem.sendSBDText(buf);
+//    lastTransmit = loopTime;
+//  }
   
   // Receive RockBlock Command as two bytes: command (char), and data (byte)
   uint8_t buffer[2];
@@ -274,19 +284,15 @@ String readSensors() {
   bool newData = false;
   
   while (Serial1.available()) {
-    //DEBUG_PRINTLN("SS AVAILABLE");
     char c = Serial1.read();
     if(gps.encode(c)) {
-      newData = true;
-      break;
+      Serial.println("Printing the encoded data!");
     }
   }
-  if(newData) {
-    f_lat = gps.location.lat();
-    f_long = gps.location.lng();
-    f_age = gps.location.age();
-    sats = gps.satellites.value();
-  }
+  f_lat = gps.location.lat();
+  f_long = gps.location.lng();
+  f_age = gps.location.age();
+  sats = gps.satellites.value();
 
   dataString += String(f_lat) + ", " + String(f_long) + ", ";
   dataString += String(f_age) + ", " + String(sats) + ", ";
@@ -336,6 +342,8 @@ bool ISBDCallback() {
     dataFile.flush();
     lastFlush = loopTime;
   }  
+  
+  delay(50);
   return true;
 }
 
