@@ -79,8 +79,6 @@ long unsigned f_age = 0;
 const int topCut = 23;
 const int bottomCut = 22;
 const int heater = 2;
-long topCutStart = -100000;
-long bottomCutStart = -100000;
 bool applyHeat = false;
 
 void setup() {
@@ -160,26 +158,36 @@ void loop() {
   String dataString = readSensors();
   long loopTime = millis();
 
-  // Receive RockBlock Command
-  uint8_t buffer[1];
+  // Receive RockBlock Command as two bytes: command (char), and data (byte)
+  uint8_t buffer[2];
   err = modem.sendReceiveSBDText(NULL, buffer, bufferSize);
 
   //cut down from balloon
   if (buffer[0] == 't') {
     topCutStart = loopTime;
+    DEBUG_PRINTLN("Top cutdown command received");
   } else if (buffer[0] == 'b') {
     bottomCutStart = loopTime;
+    DEBUG_PRINTLN("Bottom cutdown command received");
+  } else if (buffer[0] == 'p') { // camera pitch
+    // TODO pass on second byte to arduino
+    DEBUG_PRINT("Camera pitch command received. Value: ");
+    DEBUG_PRINTLN(buffer[1]);
+  } else if (buffer[0] == 'a') { // camera azimuth angle
+    // TODO pass on second byte
+    DEBUG_PRINT("Camera azimuth command received. Value: ");
+    DEBUG_PRINTLN(buffer[1]);
   }
-  if (loopTime - topCutStart < 10000) {
-    digitalWrite(topCut, HIGH);
-  } else {
-    digitalWrite(topCut, LOW);
-  }
-  if (loopTime - bottomCutStart < 10000) {
-    digitalWrite(bottomCut, HIGH);
-  } else {
-    digitalWrite(bottomCut, LOW);
-  }
+//  if (loopTime - topCutStart < 10000) {
+//    digitalWrite(topCut, HIGH);
+//  } else {
+//    digitalWrite(topCut, LOW);
+//  }
+//  if (loopTime - bottomCutStart < 10000) {
+//    digitalWrite(bottomCut, HIGH);
+//  } else {
+//    digitalWrite(bottomCut, LOW);
+//  }
 
   // heat if too cold
   if (applyHeat) {
