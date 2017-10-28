@@ -44,6 +44,7 @@ long refBottom; // Time difference between 'b' command and start of program
 #define BAROMETER_MEASURMENT_INTERVAL 10000 // 10 Seconds
 
 // SPI Ports
+#define SCK_PIN 14
 #define SD_READER_CS 10
 #define THERMOCOUPLE_CS 9
 
@@ -88,6 +89,8 @@ bool releaseBottom = false;
 //Time(seconds) for nichrome to cut through
 const int delayTime = 10;
 
+#define LED_PIN 13
+
 void setup() {
   startTime = millis();
   lastFlush = 0;
@@ -97,9 +100,11 @@ void setup() {
   pinMode(WIRE_TOP, OUTPUT);
   pinMode(WIRE_BOTTOM, OUTPUT);
   pinMode(heater, OUTPUT);
+  pinMode(LED_PIN, OUTPUT);
   digitalWrite(WIRE_TOP, LOW);
   digitalWrite(WIRE_BOTTOM, LOW);
   digitalWrite(heater, LOW);
+  digitalWrite(LED_PIN, LOW);
 
 #ifdef DEBUG
   Serial.begin(9600);
@@ -109,24 +114,20 @@ void setup() {
 #endif
 
   // SD Card Reader
+  SPI.setSCK(SCK_PIN);
   pinMode(SD_READER_CS, OUTPUT);
   DEBUG_PRINTLN("Initializing SD card...");
   if (!SD.begin(SD_READER_CS)) {
     DEBUG_PRINTLN("Card failed, or not present");
-    while (true) {
-      // TODO: Flash LED
-    }
+    flashLED();
   }
   dataFile = SD.open("datalog.txt", FILE_WRITE);
   DEBUG_PRINTLN("Card initialized.");
 
-
   // BMP280
   if (!bmp.begin()) {
     DEBUG_PRINTLN("Could not find a valid BMP280 sensor, check wiring!");
-    while (true) {
-      // TODO: flash LED
-    }
+    flashLED();
   }
   lastAlt = bmp.readAltitude(LAUNCH_SITE_PRESSURE); // initialize ascent rate variables
   ascentRate = 0;
@@ -135,9 +136,7 @@ void setup() {
   // BNO055
   if (!bno.begin()) {
     DEBUG_PRINTLN("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!");
-    while (true) {
-      // TODO: flash LED
-    }
+    flashLED();
   }
   bno.setExtCrystalUse(true); // TODO figure this out
 
@@ -158,6 +157,7 @@ void setup() {
     DEBUG_PRINT("Begin failed: error ");
     DEBUG_PRINTLN(err);
     if (err == ISBD_NO_MODEM_DETECTED) DEBUG_PRINTLN("No modem detected: check wiring.");
+    flashLED();
   }
 }
 
@@ -300,7 +300,7 @@ String readSensors() {
   DEBUG_PRINTLN("");
 
   int signalQuality = -1;
-  int err = modem.getSignalQuality(signalQuality);
+  modem.getSignalQuality(signalQuality);
   dataString += String(signalQuality) + ", ";
   
    // Turns off wires after delayTime + refTop/refBottom
@@ -320,3 +320,13 @@ String readSensors() {
   return dataString;
      
 }
+
+void flashLED() {
+  while (true) {
+    digitalWrite(LED_PIN, HIGH);
+    delay(500);
+    digitalWrite(LED_PIN, LOW);
+    delay(500);
+  }
+}
+
