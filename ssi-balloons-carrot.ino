@@ -37,6 +37,8 @@
 
 // Timing (Internal)
 long startTime;
+long refTop;
+long refBottom;
 #define SD_CARD_FLUSH_TIME 10000 // 10 Seconds
 #define ROCKBLOCK_TRANSMIT_TIME 300000 // 5 Minutes
 #define BAROMETER_MEASURMENT_INTERVAL 10000 // 10 Seconds
@@ -76,10 +78,15 @@ int sats = -1;
 long unsigned f_age = 0;
 
 // FET pin assignments
-const int topCut = 23;
-const int bottomCut = 22;
+const int WIRETOP = 23;
+const int WIREBOTTOM = 22;
 const int heater = 2;
 bool applyHeat = false;
+bool releaseTop = false; 
+bool releaseBottom = false;
+
+//Time(seconds) for nichrome to cut through
+const int delayTime = 10;
 
 void setup() {
   startTime = millis();
@@ -164,11 +171,23 @@ void loop() {
 
   //cut down from balloon
   if (buffer[0] == 't') {
-    topCutStart = loopTime;
-    DEBUG_PRINTLN("Top cutdown command received");
-  } else if (buffer[0] == 'b') {
-    bottomCutStart = loopTime;
-    DEBUG_PRINTLN("Bottom cutdown command received");
+       DEBUG_PRINTLN("Top cutdown command received");
+       releaseTop = true;
+       refTop = millis() - startTime;
+       if(releaseTop){
+            digitalWrite(WIRE_TOP, HIGH);            
+       } 
+  }
+  
+  //payload release
+  if (buffer[0] == 'b') {
+       DEBUG_PRINTLN("Bottom cutdown command received");
+       releaseBottom = true;
+       refBottom = millis() - startTime;
+       if(releaseBottom){
+            digitalWrite(WIRE_BOTTOM, HIGH);            
+       }
+    
   } else if (buffer[0] == 'p') { // camera pitch
     // TODO pass on second byte to arduino
     DEBUG_PRINT("Camera pitch command received. Value: ");
@@ -291,6 +310,19 @@ String readSensors() {
   err = modem.getSignalQuality(signalQuality);
   dataString += string(signalQuality) + ", ";
   
+  if ((millis() - refTop) > delayTime * 1000){
+     digitalWrite(WIRE_TOP, LOW);     
+     releaseTop = false;
+  }      
+  if ((millis() - refBottom) > delayTime * 1000){
+     digitalWrite(WIRE_TOP, LOW);     
+     releaseBottom = false;
+  }
+  if(!releaseTop && !releaseBottom){       
+    digitalWrite(WIRE_TOP, LOW);
+    digitalWrite(WIRE_BOTTOM, LOW);
+  }   
+     
   return dataString;
+     
 }
-
