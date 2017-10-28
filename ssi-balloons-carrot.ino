@@ -45,8 +45,8 @@ long refBottom; // Time difference between 'b' command and start of program
 
 // SPI Ports
 #define SCK_PIN 14
-#define SD_READER_CS 10
-#define THERMOCOUPLE_CS 9
+#define SD_READER_CS 20
+#define THERMOCOUPLE_CS 15
 
 // Environemental Parameters
 #define LAUNCH_SITE_PRESSURE 1014.562
@@ -136,7 +136,7 @@ void setup() {
   // BNO055
   if (!bno.begin()) {
     DEBUG_PRINTLN("Ooops, no BNO055 detected ... Check your wiring or I2C ADDR!");
-    flashLED();
+    //flashLED(); // TODO: uncomment
   }
   bno.setExtCrystalUse(true); // TODO figure this out
 
@@ -153,6 +153,8 @@ void setup() {
   IridiumSerial.begin(19200);
   DEBUG_PRINTLN("Starting rockblock serial");
   int err = modem.begin();
+  int signalQuality = -1;
+  DEBUG_PRINTLN(modem.getSignalQuality(signalQuality));
   if (err != ISBD_SUCCESS) {
     DEBUG_PRINT("Begin failed: error ");
     DEBUG_PRINTLN(err);
@@ -168,36 +170,39 @@ void loop() {
   // Receive RockBlock Command as two bytes: command (char), and data (byte)
   uint8_t buffer[2];
   size_t bufferSize = sizeof(buffer);
+  DEBUG_PRINTLN("Receiving RockBlock Commands.");
   modem.sendReceiveSBDText(NULL, buffer, bufferSize);
+  DEBUG_PRINTLN("Turns it it doesn't block.");
 
   //cut down from balloon
   if (buffer[0] == 't') {
-       DEBUG_PRINTLN("Top cutdown command received");
-       releaseTop = true;
-       refTop = millis() - startTime;
-       if(releaseTop){
-            digitalWrite(WIRE_TOP, HIGH);            
-       } 
+    DEBUG_PRINTLN("Top cutdown command received");
+    releaseTop = true;
+    refTop = millis() - startTime;
+    if(releaseTop){
+      digitalWrite(WIRE_TOP, HIGH);            
+    } 
   }
   
   //payload release
   if (buffer[0] == 'b') {
-       DEBUG_PRINTLN("Bottom cutdown command received");
-       releaseBottom = true;
-       refBottom = millis() - startTime;
-       if(releaseBottom){
-            digitalWrite(WIRE_BOTTOM, HIGH);            
-       }
-    
-  } else if (buffer[0] == 'p') { // camera pitch
-    // TODO pass on second byte to arduino
-    DEBUG_PRINT("Camera pitch command received. Value: ");
-    DEBUG_PRINTLN(buffer[1]);
-  } else if (buffer[0] == 'a') { // camera azimuth angle
-    // TODO pass on second byte
-    DEBUG_PRINT("Camera azimuth command received. Value: ");
-    DEBUG_PRINTLN(buffer[1]);
+    DEBUG_PRINTLN("Bottom cutdown command received");
+    releaseBottom = true;
+    refBottom = millis() - startTime;
+    if(releaseBottom){
+      digitalWrite(WIRE_BOTTOM, HIGH);            
+    }
   }
+//    
+//  } else if (buffer[0] == 'p') { // camera pitch
+//    // TODO pass on second byte to arduino
+//    DEBUG_PRINT("Camera pitch command received. Value: ");
+//    DEBUG_PRINTLN(buffer[1]);
+//  } else if (buffer[0] == 'a') { // camera azimuth angle
+//    // TODO pass on second byte
+//    DEBUG_PRINT("Camera azimuth command received. Value: ");
+//    DEBUG_PRINTLN(buffer[1]);
+//  }
 
   // heat if too cold
   if (applyHeat) {
@@ -226,6 +231,20 @@ void loop() {
     modem.sendSBDText(buf);
     lastTransmit = loopTime;
   }
+
+  // Turns off wires after delayTime + refTop/refBottom
+  if ((millis() - refTop) > delayTime * 1000){
+     digitalWrite(WIRE_TOP, LOW);     
+     releaseTop = false;
+  }      
+  if ((millis() - refBottom) > delayTime * 1000){
+     digitalWrite(WIRE_TOP, LOW);     
+     releaseBottom = false;
+  }
+  if(!releaseTop && !releaseBottom){       
+    digitalWrite(WIRE_TOP, LOW);
+    digitalWrite(WIRE_BOTTOM, LOW);
+  }   
 }
 
 // Reads from all of the sensors and outputs the data string
@@ -236,7 +255,7 @@ String readSensors() {
   long loopTime = millis();
   DEBUG_PRINTLN("Loop Time ");
   DEBUG_PRINTLN(loopTime);
-  dataString += loopTime + ", ";
+  dataString += String(loopTime) + ", ";
 
   // BMP280 (Barometer + Thermometer) Input
   DEBUG_PRINTLN("BMP280 stuff");
@@ -302,20 +321,6 @@ String readSensors() {
   int signalQuality = -1;
   modem.getSignalQuality(signalQuality);
   dataString += String(signalQuality) + ", ";
-  
-   // Turns off wires after delayTime + refTop/refBottom
-  if ((millis() - refTop) > delayTime * 1000){
-     digitalWrite(WIRE_TOP, LOW);     
-     releaseTop = false;
-  }      
-  if ((millis() - refBottom) > delayTime * 1000){
-     digitalWrite(WIRE_TOP, LOW);     
-     releaseBottom = false;
-  }
-  if(!releaseTop && !releaseBottom){       
-    digitalWrite(WIRE_TOP, LOW);
-    digitalWrite(WIRE_BOTTOM, LOW);
-  }   
      
   return dataString;
      
