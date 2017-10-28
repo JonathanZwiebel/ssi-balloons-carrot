@@ -28,8 +28,8 @@
 
 #define DEBUG // comment out to turn off debugging
 #ifdef DEBUG
-#define DEBUG_PRINT(x)  Serial.print (x)
-#define DEBUG_PRINTLN(x)  Serial.println (x)
+#define DEBUG_PRINT(x)  Serial.print (String(x))
+#define DEBUG_PRINTLN(x)  Serial.println (String(x))
 #else
 #define DEBUG_PRINT(x)
 #define DEBUG_PRINTLN(x)
@@ -164,9 +164,8 @@ void setup() {
 }
 
 void loop() {
-  String dataString = readSensors();
   long loopTime = millis();
-
+  
   // Receive RockBlock Command as two bytes: command (char), and data (byte)
   uint8_t buffer[2];
   size_t bufferSize = sizeof(buffer);
@@ -204,34 +203,6 @@ void loop() {
 //    DEBUG_PRINTLN(buffer[1]);
 //  }
 
-  // heat if too cold
-  if (applyHeat) {
-    digitalWrite(heater, HIGH);
-  } else {
-    digitalWrite(heater, LOW);
-  }
-
-  if (dataFile) {
-    DEBUG_PRINTLN("Writing to datalog.txt");
-    dataFile.println(dataString);
-  } else {
-    DEBUG_PRINTLN("Error opening datalog.txt");
-  }
-
-  if (loopTime - lastFlush > SD_CARD_FLUSH_TIME) {
-    DEBUG_PRINTLN("Flushing datalog.txt");
-    dataFile.flush();
-    lastFlush = loopTime;
-  }
-
-  if (loopTime - lastTransmit > ROCKBLOCK_TRANSMIT_TIME) {
-    DEBUG_PRINTLN("Transmiting to ROCKBlock");
-    char buf [200];
-    dataString.toCharArray(buf, sizeof(buf));
-    modem.sendSBDText(buf);
-    lastTransmit = loopTime;
-  }
-
   // Turns off wires after delayTime + refTop/refBottom
   if ((millis() - refTop) > delayTime * 1000){
      digitalWrite(WIRE_TOP, LOW);     
@@ -244,7 +215,14 @@ void loop() {
   if(!releaseTop && !releaseBottom){       
     digitalWrite(WIRE_TOP, LOW);
     digitalWrite(WIRE_BOTTOM, LOW);
-  }   
+  } 
+
+  if (loopTime - lastTransmit > ROCKBLOCK_TRANSMIT_TIME) {
+    DEBUG_PRINTLN("Transmiting to ROCKBlock");
+    char buf [200];
+    modem.sendSBDText(buf);
+    lastTransmit = loopTime;
+  }
 }
 
 // Reads from all of the sensors and outputs the data string
@@ -333,5 +311,31 @@ void flashLED() {
     digitalWrite(LED_PIN, LOW);
     delay(500);
   }
+}
+
+bool ISBDCallback() {
+  String dataString = readSensors();
+  long loopTime = millis();
+
+  // heat if too cold
+  if (applyHeat) {
+    digitalWrite(heater, HIGH);
+  } else {
+    digitalWrite(heater, LOW);
+  }
+
+  if (dataFile) {
+    DEBUG_PRINTLN("Writing to datalog.txt");
+    dataFile.println(dataString);
+  } else {
+    DEBUG_PRINTLN("Error opening datalog.txt");
+  }
+
+  if (loopTime - lastFlush > SD_CARD_FLUSH_TIME) {
+    DEBUG_PRINTLN("Flushing datalog.txt");
+    dataFile.flush();
+    lastFlush = loopTime;
+  }  
+  return true;
 }
 
