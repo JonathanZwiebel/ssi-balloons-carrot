@@ -20,6 +20,7 @@
 #include <Adafruit_BMP280.h>
 #include <Adafruit_BNO055.h>
 #include <Adafruit_MAX31855.h>
+#include <IridiumSBD.h>
 #include <TinyGPS++.h>
 #include "SD.h"
 #include <SPI.h>
@@ -35,7 +36,7 @@
 #endif
 
 // Timing (Internal)
-int startTime;
+long startTime;
 #define SD_CARD_FLUSH_TIME 10000 // 10 Seconds
 #define ROCKBLOCK_TRANSMIT_TIME 300000 // 5 Minutes
 #define BAROMETER_MEASURMENT_INTERVAL 10000 // 10 Seconds
@@ -49,14 +50,14 @@ int startTime;
 
 // SD Card Reader (SPI)
 File dataFile;
-int lastFlush;
+long lastFlush;
 
 // Thermocouple (SPI) | Exterior Temperature
 Adafruit_MAX31855 thermocouple(THERMOCOUPLE_CS);
 
 // BMP280 (I2C) | Pressure, Internal Temperature
 Adafruit_BMP280 bmp;
-int lastAscentTime;             // Time of last ascent rate calculation
+long lastAscentTime;             // Time of last ascent rate calculation
 double lastAlt;                 // Last altitude, for calculation
 double ascentRate;              // Last calculated rate, to fill forward in logging
 
@@ -64,7 +65,9 @@ double ascentRate;              // Last calculated rate, to fill forward in logg
 Adafruit_BNO055 bno(55);
 
 // ROCKBlock (Hardware Serial) Radio
-int lastTransmit;
+long lastTransmit;
+#define IridiumSerial Serial3
+IridiumSBD modem(IridiumSerial);
 
 // GPS (Hardware Serial) GPS
 TinyGPSPlus gps;
@@ -72,10 +75,26 @@ float f_lat = 0, f_long = 0;
 int sats = -1;
 long unsigned f_age = 0;
 
+// FET pin assignments
+const int topCut = 23;
+const int bottomCut = 22;
+const int heater = 2;
+long topCutStart = -100000;
+long bottomCutStart = -100000;
+bool applyHeat = false;
+
 void setup() {
   startTime = millis();
   lastFlush = 0;
   lastTransmit = 0;
+
+  // set FET gates to LOW
+  pinmode(topCut, OUTPUT);
+  pinmode(bottomCut, OUTPUT);
+  pinmode(heater, OUTPUT);
+  digitalWrite(topCut, LOW);
+  digitalWrite(bottomCut, LOW);
+  digitalWrite(heater, LOW);
 
 #ifdef DEBUG
   Serial.begin(9600);
@@ -123,13 +142,51 @@ void setup() {
   pinMode(THERMOCOUPLE_CS, OUTPUT);
 
   // Data column headers. Temporary.
-  dataFile.print("Time(ms), Pressure(Pa), Alt(m), AscentRate(m/s), TempIn(C), TempOut(C), ");
-  dataFile.println("GPSLat, GPSLong, GPSAlt, ax(G), ay, az, gx, gy, gz, mx, my, mz, RockBlockStatus");
+  dataFile.print("Time(ms), Pressure(Pa), Alt(m), AscentRate(m/s), TempIn(C), OrientationX(deg), y(deg) , z(deg), ");
+  dataFile.println("TempOut(C), GPSLat, GPSLong, GPSAge, GPSSats, RBSigalQuality");
+
+  // RockBlock
+  IridiumSerial.begin(19200);
+  DEBUG_PRINTLN("Starting rockblock serial");
+  err = modem.begin();
+  if (err != ISBD_SUCCESS) {
+    DEBUG_PRINT("Begin failed: error ");
+    DEBUG_PRINTLN(err);
+    if (err == ISBD_NO_MODEM_DETECTED) DEBUG_PRINTLN("No modem detected: check wiring.");
+  }
 }
 
 void loop() {
   String dataString = readSensors();
   long loopTime = millis();
+
+  // Receive RockBlock Command
+  uint8_t buffer[1];
+  err = modem.sendReceiveSBDText(NULL, buffer, bufferSize);
+
+  //cut down from balloon
+  if (buffer[0] == 't') {
+    topCutStart = loopTime;
+  } else if (buffer[0] == 'b') {
+    bottomCutStart = loopTime;
+  }
+  if (loopTime - topCutStart < 10000) {
+    digitalWrite(topCut, HIGH);
+  } else {
+    digitalWrite(topCut, LOW);
+  }
+  if (loopTime - bottomCutStart < 10000) {
+    digitalWrite(bottomCut, HIGH);
+  } else {
+    digitalWrite(bottomCut, LOW);
+  }
+
+  // heat if too cold
+  if (applyHeat) {
+    digitalWrite(heater, HIGH);
+  } else {
+    digitalWrite(heater, LOW);
+  }
 
   if (dataFile) {
     DEBUG_PRINTLN("Writing to datalog.txt");
@@ -146,7 +203,7 @@ void loop() {
 
   if (loopTime - lastTransmit > ROCKBLOCK_TRANSMIT_TIME) {
     DEBUG_PRINTLN("Transmiting to ROCKBlock");
-    // TODO: Send dataString to rockblock
+    err = modem.sendSBDText(dataString);
     lastTransmit = loopTime;
   }
 }
@@ -157,13 +214,14 @@ String readSensors() {
 
   // Timing
   long loopTime = millis();
-  DEBUG_PRINTLN("Loop Time");
+  DEBUG_PRINTLN("Loop Time ");
   DEBUG_PRINTLN(loopTime);
   dataString += loopTime + ", ";
 
   // BMP280 (Barometer + Thermometer) Input
   DEBUG_PRINTLN("BMP280 stuff");
   double tempIn = bmp.readTemperature();
+  applyHeat = (tempIn < 0);
   double pressure = bmp.readPressure();
   double alt = bmp.readAltitude(LAUNCH_SITE_PRESSURE); // avg sea level pressure for hollister for past month
   if (loopTime - lastAscentTime > BAROMETER_MEASURMENT_INTERVAL) { // calculate ascent rate in m/s every 10s
@@ -190,7 +248,7 @@ String readSensors() {
 
   // MAX31855 (Thermocouple) Input
   DEBUG_PRINTLN("MAX31855 Stuff");
-  double temperature = thermocouple.readFarenheit();
+  double temperature = thermocouple.readCelsius(); // celsius
   dataString += String(temperature) + ", ";
   DEBUG_PRINTLN(temperature);
 
@@ -213,12 +271,18 @@ String readSensors() {
     sats = gps.satellites.value();
   }
 
-  dataString += String(f_lat) + ", " + String(f_long) + ", " + String(f_age) + ", " + String(sats);
+  dataString += String(f_lat) + ", " + String(f_long) + ", ";
+  dataSTring += String(f_age) + ", " + String(sats); + ", ";
   DEBUG_PRINTLN(f_lat);
   DEBUG_PRINTLN(f_long);
   DEBUG_PRINTLN(f_age);
   DEBUG_PRINTLN(sats);
   DEBUG_PRINTLN("");
+
+  int signalQuality = -1;
+  err = modem.getSignalQuality(signalQuality);
+  dataString += string(signalQuality) + ", ";
+  
   return dataString;
 }
 
