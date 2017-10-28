@@ -78,8 +78,8 @@ int sats = -1;
 long unsigned f_age = 0;
 
 // FET pin assignments
-const int WIRETOP = 23;
-const int WIREBOTTOM = 22;
+const int WIRE_TOP = 23;
+const int WIRE_BOTTOM = 22;
 const int heater = 2;
 bool applyHeat = false;
 bool releaseTop = false; 
@@ -94,9 +94,9 @@ void setup() {
   lastTransmit = 0;
 
   // set FET gates to LOW
-  pinmode(WIRE_TOP, OUTPUT);
-  pinmode(WIRE_BOTTOM, OUTPUT);
-  pinmode(heater, OUTPUT);
+  pinMode(WIRE_TOP, OUTPUT);
+  pinMode(WIRE_BOTTOM, OUTPUT);
+  pinMode(heater, OUTPUT);
   digitalWrite(WIRE_TOP, LOW);
   digitalWrite(WIRE_BOTTOM, LOW);
   digitalWrite(heater, LOW);
@@ -153,7 +153,7 @@ void setup() {
   // RockBlock
   IridiumSerial.begin(19200);
   DEBUG_PRINTLN("Starting rockblock serial");
-  err = modem.begin();
+  int err = modem.begin();
   if (err != ISBD_SUCCESS) {
     DEBUG_PRINT("Begin failed: error ");
     DEBUG_PRINTLN(err);
@@ -167,7 +167,8 @@ void loop() {
 
   // Receive RockBlock Command as two bytes: command (char), and data (byte)
   uint8_t buffer[2];
-  err = modem.sendReceiveSBDText(NULL, buffer, bufferSize);
+  size_t bufferSize = sizeof(buffer);
+  modem.sendReceiveSBDText(NULL, buffer, bufferSize);
 
   //cut down from balloon
   if (buffer[0] == 't') {
@@ -197,16 +198,6 @@ void loop() {
     DEBUG_PRINT("Camera azimuth command received. Value: ");
     DEBUG_PRINTLN(buffer[1]);
   }
-//  if (loopTime - topCutStart < 10000) {
-//    digitalWrite(topCut, HIGH);
-//  } else {
-//    digitalWrite(topCut, LOW);
-//  }
-//  if (loopTime - bottomCutStart < 10000) {
-//    digitalWrite(bottomCut, HIGH);
-//  } else {
-//    digitalWrite(bottomCut, LOW);
-//  }
 
   // heat if too cold
   if (applyHeat) {
@@ -230,7 +221,9 @@ void loop() {
 
   if (loopTime - lastTransmit > ROCKBLOCK_TRANSMIT_TIME) {
     DEBUG_PRINTLN("Transmiting to ROCKBlock");
-    err = modem.sendSBDText(dataString);
+    char buf [200];
+    dataString.toCharArray(buf, sizeof(buf));
+    modem.sendSBDText(buf);
     lastTransmit = loopTime;
   }
 }
@@ -299,7 +292,7 @@ String readSensors() {
   }
 
   dataString += String(f_lat) + ", " + String(f_long) + ", ";
-  dataSTring += String(f_age) + ", " + String(sats); + ", ";
+  dataString += String(f_age) + ", " + String(sats) + ", ";
   DEBUG_PRINTLN(f_lat);
   DEBUG_PRINTLN(f_long);
   DEBUG_PRINTLN(f_age);
@@ -307,8 +300,8 @@ String readSensors() {
   DEBUG_PRINTLN("");
 
   int signalQuality = -1;
-  err = modem.getSignalQuality(signalQuality);
-  dataString += string(signalQuality) + ", ";
+  int err = modem.getSignalQuality(signalQuality);
+  dataString += String(signalQuality) + ", ";
   
    // Turns off wires after delayTime + refTop/refBottom
   if ((millis() - refTop) > delayTime * 1000){
